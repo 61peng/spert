@@ -29,7 +29,7 @@ class SpERTTrainer(BaseTrainer):
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
-
+        # 加载tokenizer
         # byte-pair encoding
         self._tokenizer = BertTokenizer.from_pretrained(args.tokenizer_path,
                                                         do_lower_case=args.lowercase,
@@ -49,13 +49,13 @@ class SpERTTrainer(BaseTrainer):
         # read datasets
         input_reader = input_reader_cls(types_path, self._tokenizer, args.neg_entity_count,
                                         args.neg_relation_count, args.max_span_size, self._logger)
-        train_dataset = input_reader.read(train_path, train_label)
-        validation_dataset = input_reader.read(valid_path, valid_label)
-        self._log_datasets(input_reader)
+        train_dataset = input_reader.read(train_path, train_label)  # 解析训练数据
+        validation_dataset = input_reader.read(valid_path, valid_label)  # 解析测试数据
+        self._log_datasets(input_reader)  # 写入log文件
 
-        train_sample_count = train_dataset.document_count
-        updates_epoch = train_sample_count // args.train_batch_size
-        updates_total = updates_epoch * args.epochs
+        train_sample_count = train_dataset.document_count  # 训练样本数
+        updates_epoch = train_sample_count // args.train_batch_size  # 迭代次数
+        updates_total = updates_epoch * args.epochs  # 迭代次数 * epoch数 = 总迭代（更新）次数
 
         self._logger.info("Updates per epoch: %s" % updates_epoch)
         self._logger.info("Updates total: %s" % updates_total)
@@ -65,35 +65,36 @@ class SpERTTrainer(BaseTrainer):
 
         # SpERT is currently optimized on a single GPU and not thoroughly tested in a multi GPU setup
         # If you still want to train SpERT on multiple GPUs, uncomment the following lines
-        # # parallelize model
-        # if self._device.type != 'cpu':
-        #     model = torch.nn.DataParallel(model)
+        # parallelize model
+        # if torch.cuda.device_count() > 1:
+        #     model = torch.nn.DataParallel(model, device_ids=[4,1])  # 并行
 
         model.to(self._device)
 
-        # create optimizer
+        # 构建优化器
         optimizer_params = self._get_optimizer_params(model)
         optimizer = AdamW(optimizer_params, lr=args.lr, weight_decay=args.weight_decay, correct_bias=False)
         # create scheduler
         scheduler = transformers.get_linear_schedule_with_warmup(optimizer,
                                                                  num_warmup_steps=args.lr_warmup * updates_total,
                                                                  num_training_steps=updates_total)
-        # create loss function
+        # 构建损失函数
         rel_criterion = torch.nn.BCEWithLogitsLoss(reduction='none')
         entity_criterion = torch.nn.CrossEntropyLoss(reduction='none')
         compute_loss = SpERTLoss(rel_criterion, entity_criterion, model, optimizer, scheduler, args.max_grad_norm)
 
-        # eval validation set
+        # 初始评估验证集
         if args.init_eval:
             self._eval(model, validation_dataset, input_reader, 0, updates_epoch)
 
-        # train
+        # 训练
         for epoch in range(args.epochs):
             # train epoch
             self._train_epoch(model, compute_loss, optimizer, train_dataset, updates_epoch, epoch)
 
             # eval validation sets
-            if not args.final_eval or (epoch == args.epochs - 1):
+            # if not args.final_eval or (epoch == args.epochs - 1):
+            if (epoch + 1) % 10 == 0 or (epoch == args.epochs - 1):
                 self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
 
         # save final model
@@ -101,7 +102,7 @@ class SpERTTrainer(BaseTrainer):
         global_iteration = args.epochs * updates_epoch
         self._save_model(self._save_path, model, self._tokenizer, global_iteration,
                          optimizer=optimizer if self._args.save_optimizer else None, extra=extra,
-                         include_iteration=False, name='final_model')
+                         include_iteration=False, name=f'{(epoch+1)}_model')
 
         self._logger.info("Logged in: %s" % self._log_path)
         self._logger.info("Saved in: %s" % self._save_path)
@@ -125,6 +126,8 @@ class SpERTTrainer(BaseTrainer):
 
         # load model
         model = self._load_model(input_reader)
+        # if torch.cuda.device_count() > 1:
+        #     model = torch.nn.DataParallel(model, device_ids=[4,1])  # 并行
         model.to(self._device)
 
         # evaluate
@@ -149,10 +152,10 @@ class SpERTTrainer(BaseTrainer):
 
     def _load_model(self, input_reader):
         model_class = models.get_model(self._args.model_type)
-
+        # print(f"model_class参数值为{model_class}")
         config = BertConfig.from_pretrained(self._args.model_path, cache_dir=self._args.cache_path)
         util.check_version(config, model_class, self._args.model_path)
-
+        # 加载模型 
         config.spert_version = model_class.VERSION
         model = model_class.from_pretrained(self._args.model_path,
                                             config=config,

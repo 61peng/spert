@@ -10,13 +10,13 @@ from spert import util
 
 def get_token(h: torch.tensor, x: torch.tensor, token: int):
     """ Get specific token embedding (e.g. [CLS]) """
-    emb_size = h.shape[-1]
+    emb_size = h.shape[-1]  # 768
 
-    token_h = h.view(-1, emb_size)
-    flat = x.contiguous().view(-1)
+    token_h = h.view(-1, emb_size)  # Size([len(encoding), 768])
+    flat = x.contiguous().view(-1)  # Size([len(encoding))
 
-    # get contextualized embedding of given token
-    token_h = token_h[flat == token, :]
+    # 获取给定token的上下文embedding
+    token_h = token_h[flat == token, :]  # Size([1, 768])
 
     return token_h
 
@@ -58,15 +58,15 @@ class SpERT(BertPreTrainedModel):
                        entity_sizes: torch.tensor, relations: torch.tensor, rel_masks: torch.tensor):
         # get contextualized token embeddings from last transformer layer
         context_masks = context_masks.float()
-        h = self.bert(input_ids=encodings, attention_mask=context_masks)['last_hidden_state']
+        h = self.bert(input_ids=encodings, attention_mask=context_masks)['last_hidden_state']  # size([batch size, len(encoding), 768])
 
         batch_size = encodings.shape[0]
 
-        # classify entities
+        # 实体分类
         size_embeddings = self.size_embeddings(entity_sizes)  # embed entity candidate sizes
-        entity_clf, entity_spans_pool = self._classify_entities(encodings, h, entity_masks, size_embeddings)
-
-        # classify relations
+        entity_clf, entity_spans_pool = self._classify_entities(encodings, h, entity_masks, size_embeddings)  # entity_masks: Size([batch size, neg_entity_count+entity_count, len(encoding)]); size_embeddings: Size([batch size, neg_entity_count+entity_count, 25])
+        # entity_clf: Size([batch size, neg_entity_count+entity_count, entity_type])
+        # 关系分类
         h_large = h.unsqueeze(1).repeat(1, max(min(relations.shape[1], self._max_pairs), 1), 1, 1)
         rel_clf = torch.zeros([batch_size, relations.shape[1], self._relation_types]).to(
             self.rel_classifier.weight.device)
@@ -80,7 +80,7 @@ class SpERT(BertPreTrainedModel):
             rel_clf[:, i:i + self._max_pairs, :] = chunk_rel_logits
 
         return entity_clf, rel_clf
-
+    # 预测时调用
     def _forward_inference(self, encodings: torch.tensor, context_masks: torch.tensor, entity_masks: torch.tensor,
                            entity_sizes: torch.tensor, entity_spans: torch.tensor, entity_sample_masks: torch.tensor):
         # get contextualized token embeddings from last transformer layer
@@ -123,10 +123,12 @@ class SpERT(BertPreTrainedModel):
     def _classify_entities(self, encodings, h, entity_masks, size_embeddings):
         # max pool entity candidate spans
         m = (entity_masks.unsqueeze(-1) == 0).float() * (-1e30)
-        entity_spans_pool = m + h.unsqueeze(1).repeat(1, entity_masks.shape[1], 1, 1)
-        entity_spans_pool = entity_spans_pool.max(dim=2)[0]
+        if hasattr(torch.cuda, 'empty_cache'):
+            torch.cuda.empty_cache()
+        entity_spans_pool = m + h.unsqueeze(1).repeat(1, entity_masks.shape[1], 1, 1)  # 在第二维重复100次，Size([1, neg_entity_count+entity_count, len(encodings), 768])
+        entity_spans_pool = entity_spans_pool.max(dim=2)[0]  # Size([1, neg_entity_count+entity_count, 768])
 
-        # get cls token as candidate context representation
+        # 获取cls token作为候选上下文表示
         entity_ctx = get_token(h, encodings, self._cls_token)
 
         # create candidate representations including context, max pooled span and size embedding
@@ -187,7 +189,7 @@ class SpERT(BertPreTrainedModel):
             sample_masks = []
 
             # get spans classified as entities
-            non_zero_indices = (entity_logits_max[i] != 0).nonzero().view(-1)
+            non_zero_indices = (entity_logits_max[i] != 0).nonzero(as_tuple=False).view(-1)
             non_zero_spans = entity_spans[i][non_zero_indices].tolist()
             non_zero_indices = non_zero_indices.tolist()
 

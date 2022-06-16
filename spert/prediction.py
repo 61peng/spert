@@ -50,7 +50,7 @@ def convert_predictions(batch_entity_clf: torch.tensor, batch_rel_clf: torch.ten
 def _convert_pred_entities(entity_types: torch.tensor, entity_spans: torch.tensor,
                            entity_scores: torch.tensor, input_reader: BaseInputReader):
     # get entities that are not classified as 'None'
-    valid_entity_indices = entity_types.nonzero().view(-1)
+    valid_entity_indices = entity_types.nonzero(as_tuple=False).view(-1)
     pred_entity_types = entity_types[valid_entity_indices]
     pred_entity_spans = entity_spans[valid_entity_indices]
     pred_entity_scores = torch.gather(entity_scores[valid_entity_indices], 1,
@@ -77,7 +77,7 @@ def _convert_pred_relations(rel_clf: torch.tensor, rels: torch.tensor,
     rel_clf = rel_clf.view(-1)
 
     # get predicted relation labels and corresponding entity pairs
-    rel_nonzero = rel_clf.nonzero().view(-1)
+    rel_nonzero = rel_clf.nonzero(as_tuple=False).view(-1)
     pred_rel_scores = rel_clf[rel_nonzero]
 
     pred_rel_types = (rel_nonzero % rel_class_count) + 1  # model does not predict None class (+1)

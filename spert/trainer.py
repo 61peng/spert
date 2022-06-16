@@ -63,7 +63,7 @@ class BaseTrainer:
         self._best_results = dict()
 
         # CUDA devices
-        self._device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
+        self._device = torch.device("cuda:4" if torch.cuda.is_available() and not args.cpu else "cpu")
         self._gpu_count = torch.cuda.device_count()
 
         # set seed

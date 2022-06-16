@@ -154,9 +154,9 @@ class TokenSpan:
 
 
 class Entity:
-    def __init__(self, eid: int, entity_type: EntityType, tokens: List[Token], phrase: str):
+    def __init__(self, eid: int, entity_type: EntityType, tokens: List[Token], phrase: str, ID: str):
         self._eid = eid  # ID within the corresponding dataset
-
+        self.ID = ID
         self._entity_type = entity_type
 
         self._tokens = tokens
@@ -372,8 +372,8 @@ class Dataset(TorchDataset):
 
         return document
 
-    def create_entity(self, entity_type, tokens, phrase) -> Entity:
-        mention = Entity(self._eid, entity_type, tokens, phrase)
+    def create_entity(self, entity_type, tokens, phrase, ID) -> Entity:
+        mention = Entity(self._eid, entity_type, tokens, phrase, ID)
         self._entities[self._eid] = mention
         self._eid += 1
         return mention
