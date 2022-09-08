@@ -100,7 +100,7 @@ def custom_tokenizer(nlp):
         "AWB":[{"ORTH": "A"}, {"ORTH": "W"}, {"ORTH": "B"}]}  # 特例词典
     prefix_re = re.compile(r'''^[\[\(\{\}\$\|\.\^"'=@,\-\+_\\]''')  # 前缀标点
     suffix_re = re.compile(r'''[\]\)\}\$\^\|\.!"'-=@,_\\]$''')  # 后缀标点
-    infix_re = re.compile(r'''[-~=\.\{\}^\(\)\/\[\]\$@\|\'(\d+):;_\\,&<>\+]''')  # 中间标点
+    infix_re = re.compile(r'''[-~=\.\{\}^\(\)\/\[\]\$@\|\':;_\\,&<>\+]''')  # 中间标点
     simple_url_re = re.compile(r'''^https?://''')
     return Tokenizer(nlp.vocab, rules=special_cases,
                                 prefix_search=prefix_re.search,
@@ -111,9 +111,9 @@ def custom_tokenizer(nlp):
 
 def custom_tokenizerv2(nlp):
     special_cases = {}  # 特例词典
-    prefix_re = re.compile(r'''^[_^,\[\(\{\]\)\}\$\+\/"'<>]''')  # 前缀标点
-    suffix_re = re.compile(r'''[_^,\[\(\{\]\)\}\$\+\/"'<>]$''')  # 后缀标点
-    infix_re = re.compile(r'''[-~=_^,\{\}\(\)\[\]\$\+\/]''')  # 中间标点
+    prefix_re = re.compile(r'''^[_^,.@\[\(\{\]\)\}\$\+\/"'<>]''')  # 前缀标点
+    suffix_re = re.compile(r'''[_^,.@!\[\(\{\]\)\}\$\+\/"'<>]$''')  # 后缀标点
+    infix_re = re.compile(r'''[-~=_^,.&@\{\}\(\)\[\]\$\+\/]''')  # 中间标点
     simple_url_re = re.compile(r'''^https?://''')
     return Tokenizer(nlp.vocab, rules=special_cases,
                                 prefix_search=prefix_re.search,

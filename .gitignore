@@ -111,3 +111,5 @@ tmp/
 runs/
 *.state
 checkpoint
+.vscode/
+nohup.out

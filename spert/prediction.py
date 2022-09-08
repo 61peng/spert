@@ -2,9 +2,10 @@ import json
 from typing import Tuple
 
 import torch
-
+import spacy
 from spert import util
 from spert.input_reader import BaseInputReader
+from data_processing.data_val import custom_tokenizer, custom_tokenizerv2
 
 
 def convert_predictions(batch_entity_clf: torch.tensor, batch_rel_clf: torch.tensor,
@@ -160,50 +161,50 @@ def _adjust_rel(rel: Tuple):
     return adjusted_rel
 
 
-def store_predictions(documents, pred_entities, pred_relations, store_path):
-    predictions = []
-
+def store_predictions(dataset_path, documents, pred_entities, pred_relations, store_path):
+    nlp = spacy.blank("en")
+    nlp.tokenizer = custom_tokenizerv2(nlp)
+    predictions = {}
+    orig_datasets = json.load(open(dataset_path))
+    pred_obj = [[key,value] for key, value in orig_datasets.items()]
     for i, doc in enumerate(documents):
         tokens = doc.tokens
         sample_pred_entities = pred_entities[i]
         sample_pred_relations = pred_relations[i]
+        sample_pre_text = pred_obj[i][1]["text"]
+        document = nlp.make_doc(sample_pre_text)
 
         # convert entities
-        converted_entities = []
-        for entity in sample_pred_entities:
-            entity_span = entity[:2]
-            span_tokens = util.get_span_tokens(tokens, entity_span)
+        converted_entities = {}
+        for id, entity in enumerate(sample_pred_entities):
+            span_tokens = util.get_span_tokens(tokens, (entity[0],entity[1]))
+            entity_span = document[span_tokens[0].index:span_tokens[-1].index+1]
+            start = entity_span.start_char
+            end = entity_span.end_char
+            span_text = sample_pre_text[start:end]
             entity_type = entity[2].identifier
-            converted_entity = dict(type=entity_type, start=span_tokens[0].index, end=span_tokens[-1].index + 1)
-            converted_entities.append(converted_entity)
-        converted_entities = sorted(converted_entities, key=lambda e: e['start'])
+            eid = f"T{(id+1)}"
+            converted_entity = dict(eid=eid, label=entity_type, start=start, end=end, text=span_text)
+            converted_entities[eid] = converted_entity
 
         # convert relations
-        converted_relations = []
-        for relation in sample_pred_relations:
+        converted_relations = {}
+        sample_pred_entities_copy = [entity[:3] for entity in sample_pred_entities]
+        for id, relation in enumerate(sample_pred_relations):
             head, tail = relation[:2]
-            head_span, head_type = head[:2], head[2].identifier
-            tail_span, tail_type = tail[:2], tail[2].identifier
-            head_span_tokens = util.get_span_tokens(tokens, head_span)
-            tail_span_tokens = util.get_span_tokens(tokens, tail_span)
             relation_type = relation[2].identifier
 
-            converted_head = dict(type=head_type, start=head_span_tokens[0].index,
-                                  end=head_span_tokens[-1].index + 1)
-            converted_tail = dict(type=tail_type, start=tail_span_tokens[0].index,
-                                  end=tail_span_tokens[-1].index + 1)
+            head_idx = f"T{(sample_pred_entities_copy.index(head) + 1)}"
+            tail_idx = f"T{(sample_pred_entities_copy.index(tail) + 1)}"
 
-            head_idx = converted_entities.index(converted_head)
-            tail_idx = converted_entities.index(converted_tail)
+            rid = f"R{(id+1)}"
+            converted_relation = dict(rid=rid, label=relation_type, arg0=head_idx, arg1=tail_idx)
+            converted_relations[rid] = converted_relation
 
-            converted_relation = dict(type=relation_type, head=head_idx, tail=tail_idx)
-            converted_relations.append(converted_relation)
-        converted_relations = sorted(converted_relations, key=lambda r: r['head'])
-
-        doc_predictions = dict(tokens=[t.phrase for t in tokens], entities=converted_entities,
-                               relations=converted_relations)
-        predictions.append(doc_predictions)
+        doc_predictions = dict(pred_obj[i][1], entity=converted_entities,
+                               relation=converted_relations)
+        predictions[pred_obj[i][0]] = doc_predictions
 
     # store as json
     with open(store_path, 'w') as predictions_file:
-        json.dump(predictions, predictions_file)
+        json.dump(predictions, predictions_file, indent=2)

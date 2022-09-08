@@ -83,8 +83,8 @@ class Evaluator:
 
         return ner_eval, rel_eval, rel_nec_eval
 
-    def store_predictions(self):
-        prediction.store_predictions(self._dataset.documents, self._pred_entities,
+    def store_predictions(self,dataset_path):
+        prediction.store_predictions(dataset_path, self._dataset.documents, self._pred_entities,
                                      self._pred_relations, self._predictions_path)
 
     def store_examples(self):

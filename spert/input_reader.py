@@ -5,12 +5,12 @@ from logging import Logger
 from typing import List
 from parso import split_lines
 from tqdm import tqdm
-from transformers import BertTokenizer
+from transformers import BertTokenizer, RobertaTokenizer
 
 from spert import util
 from spert.entities import Dataset, EntityType, RelationType, Entity, Relation, Document
 from spert.opt import spacy
-from data_processing.data_val import custom_tokenizer, generate_tokens
+from data_processing.data_val import custom_tokenizer, custom_tokenizerv2, generate_tokens
 
 
 class BaseInputReader(ABC):
@@ -137,14 +137,13 @@ class JsonInputReader(BaseInputReader):
         _jentities = doc['entity']
 
         # 解析text
-        doc_tokens, doc_encoding, jentities = _parse_tokens(jtext, _jentities, dataset, self._tokenizer)
+        doc_tokens, doc_encoding, jentities = self._parse_tokens(jtext, _jentities, dataset, self._tokenizer)
         # 实体长度列表
         entities_len = [jentities[i]['end']-jentities[i]['start'] for i in range(len(jentities))]
         if len(entities_len) == 0:
             entities_len.append(0)
         # 过滤序列长度大于512和实体长度大于100的document
         if len(doc_encoding) <= 512 and max(entities_len) < 100:
-        # if len(doc_encoding) <= 512:
             # 解析实体提及
             entities = self._parse_entities(jentities, doc_tokens, dataset)
 
@@ -156,6 +155,31 @@ class JsonInputReader(BaseInputReader):
 
             return document
 
+    def _parse_tokens(self, jtext, _jentities, dataset, tokenizer):
+        doc_tokens = []
+        
+        # full document encoding including special tokens ([CLS] and [SEP]) and byte-pair encodings of original tokens
+        doc_encoding = [tokenizer.convert_tokens_to_ids('[CLS]')]
+
+        # parse tokens
+        
+        jtokens, jentities = generate_tokens(jtext, _jentities)
+
+        for i, token_phrase in enumerate(jtokens):
+            token_encoding = tokenizer.encode(token_phrase, add_special_tokens=False)  # BPE切词（改）
+            if not token_encoding:
+                token_encoding = [tokenizer.convert_tokens_to_ids('[UNK]')]
+            span_start, span_end = (len(doc_encoding), len(doc_encoding) + len(token_encoding))  # 在doc_encoding中的start和end
+
+            token = dataset.create_token(i, span_start, span_end, token_phrase)
+
+            doc_tokens.append(token)
+            doc_encoding += token_encoding
+
+        doc_encoding += [tokenizer.convert_tokens_to_ids('[SEP]')]
+
+        return doc_tokens, doc_encoding, jentities
+    
     def _parse_entities(self, jentities, doc_tokens, dataset):
         entities = []
 
@@ -206,8 +230,8 @@ class JsonPredictionInputReader(BaseInputReader):
         super().__init__(types_path, tokenizer, max_span_size=max_span_size, logger=logger)
         self._spacy_model = spacy_model
 
-        self._nlp = spacy.load(spacy_model) if spacy is not None and spacy_model is not None else None
-        self._nlp.tokenizer = custom_tokenizer(self._nlp)
+        self._nlp = spacy.blank(spacy_model) if spacy is not None and spacy_model is not None else None
+        self._nlp.tokenizer = custom_tokenizerv2(self._nlp)
     def read(self, dataset_path, dataset_label):
         dataset = Dataset(dataset_label, self._relation_types, self._entity_types, self._neg_entity_count,
                           self._neg_rel_count, self._max_span_size)
@@ -217,47 +241,47 @@ class JsonPredictionInputReader(BaseInputReader):
 
     def _parse_dataset(self, dataset_path, dataset):
         documents = json.load(open(dataset_path))
-        for document in tqdm(documents, desc="Parse dataset '%s'" % dataset.label):
+        for document in tqdm(documents.values(), desc="Parse dataset '%s'" % dataset.label):
             self._parse_document(document, dataset)
 
     def _parse_document(self, document, dataset):
-        if type(document) == list:
-            jtokens = document
-        elif type(document) == dict:
-            jtokens = document['tokens']
-        else:
-            jtokens = [t.text for t in self._nlp(document)]
+
+        jtext = document['text']
+        doc = self._nlp.make_doc(jtext)
+        jtokens = [t.text for t in doc]
 
         # parse tokens
-        doc_tokens, doc_encoding = _parse_tokens(jtokens, dataset, self._tokenizer)
-
+        doc_tokens, doc_encoding = self._parse_tokens(jtokens, dataset, self._tokenizer)
+        if len(doc_encoding) >= 512:
+            for index in range(len(doc_tokens)):
+                if doc_tokens[index].span_end >= 512:
+                    doc_encoding = doc_encoding[:doc_tokens[index].span_start]
+                    doc_encoding += [self._tokenizer.convert_tokens_to_ids('[SEP]')]
+                    doc_tokens = doc_tokens[:index]
+                    break
         # create document
         document = dataset.create_document(doc_tokens, [], [], doc_encoding)
 
         return document
 
+    def _parse_tokens(self, jtokens, dataset, tokenizer):
+        doc_tokens = []
 
-def _parse_tokens(jtext, _jentities, dataset, tokenizer):
-    doc_tokens = []
-    
-    # full document encoding including special tokens ([CLS] and [SEP]) and byte-pair encodings of original tokens
-    doc_encoding = [tokenizer.convert_tokens_to_ids('[CLS]')]
+        # full document encoding including special tokens ([CLS] and [SEP]) and byte-pair encodings of original tokens
+        doc_encoding = [tokenizer.convert_tokens_to_ids('[CLS]')]
 
-    # parse tokens
-    
-    jtokens, jentities = generate_tokens(jtext, _jentities)
+        # parse tokens
+        for i, token_phrase in enumerate(jtokens):
+            token_encoding = tokenizer.encode(token_phrase, add_special_tokens=False)
+            if not token_encoding:
+                token_encoding = [tokenizer.convert_tokens_to_ids('[UNK]')]
+            span_start, span_end = (len(doc_encoding), len(doc_encoding) + len(token_encoding))
 
-    for i, token_phrase in enumerate(jtokens):
-        token_encoding = tokenizer.encode(token_phrase, add_special_tokens=False)  # BPE切词（改）
-        if not token_encoding:
-            token_encoding = [tokenizer.convert_tokens_to_ids('[UNK]')]
-        span_start, span_end = (len(doc_encoding), len(doc_encoding) + len(token_encoding))  # 在doc_encoding中的start和end
+            token = dataset.create_token(i, span_start, span_end, token_phrase)
 
-        token = dataset.create_token(i, span_start, span_end, token_phrase)
+            doc_tokens.append(token)
+            doc_encoding += token_encoding
 
-        doc_tokens.append(token)
-        doc_encoding += token_encoding
+        doc_encoding += [tokenizer.convert_tokens_to_ids('[SEP]')]
 
-    doc_encoding += [tokenizer.convert_tokens_to_ids('[SEP]')]
-
-    return doc_tokens, doc_encoding, jentities
+        return doc_tokens, doc_encoding

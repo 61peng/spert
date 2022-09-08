@@ -8,8 +8,8 @@ from torch.nn import DataParallel
 from torch.optim import Optimizer
 import transformers
 from torch.utils.data import DataLoader
-from transformers import AdamW, BertConfig
-from transformers import BertTokenizer
+from transformers import AdamW, BertConfig,RobertaConfig
+from transformers import BertTokenizer,RobertaTokenizer
 
 from spert import models, prediction
 from spert import sampling
@@ -85,7 +85,7 @@ class SpERTTrainer(BaseTrainer):
 
         # 初始评估验证集
         if args.init_eval:
-            self._eval(model, validation_dataset, input_reader, 0, updates_epoch)
+            self._eval(valid_path, model, validation_dataset, input_reader, 0, updates_epoch)
 
         # 训练
         for epoch in range(args.epochs):
@@ -95,7 +95,7 @@ class SpERTTrainer(BaseTrainer):
             # eval validation sets
             # if not args.final_eval or (epoch == args.epochs - 1):
             if (epoch + 1) % 10 == 0 or (epoch == args.epochs - 1):
-                self._eval(model, validation_dataset, input_reader, epoch + 1, updates_epoch)
+                self._eval(valid_path, model, validation_dataset, input_reader, epoch + 1, updates_epoch)
 
         # save final model
         extra = dict(epoch=args.epochs, updates_epoch=updates_epoch, epoch_iteration=0)
@@ -131,7 +131,7 @@ class SpERTTrainer(BaseTrainer):
         model.to(self._device)
 
         # evaluate
-        self._eval(model, test_dataset, input_reader)
+        self._eval(dataset_path, model, test_dataset, input_reader)
 
         self._logger.info("Logged in: %s" % self._log_path)
         self._close_summary_writer()
@@ -148,14 +148,14 @@ class SpERTTrainer(BaseTrainer):
         model = self._load_model(input_reader)
         model.to(self._device)
 
-        self._predict(model, dataset, input_reader)
+        self._predict(dataset_path, model, dataset, input_reader)
 
     def _load_model(self, input_reader):
         model_class = models.get_model(self._args.model_type)
-        # print(f"model_class参数值为{model_class}")
+        print(f"model_class参数值为{model_class}")
         config = BertConfig.from_pretrained(self._args.model_path, cache_dir=self._args.cache_path)
         util.check_version(config, model_class, self._args.model_path)
-        # 加载模型 
+        # 加载模型
         config.spert_version = model_class.VERSION
         model = model_class.from_pretrained(self._args.model_path,
                                             config=config,
@@ -208,7 +208,7 @@ class SpERTTrainer(BaseTrainer):
 
         return iteration
 
-    def _eval(self, model: torch.nn.Module, dataset: Dataset, input_reader: BaseInputReader,
+    def _eval(self, dataset_path: str, model: torch.nn.Module, dataset: Dataset, input_reader: BaseInputReader,
               epoch: int = 0, updates_epoch: int = 0, iteration: int = 0):
         self._logger.info("Evaluate: %s" % dataset.label)
 
@@ -253,12 +253,12 @@ class SpERTTrainer(BaseTrainer):
                        epoch, iteration, global_iteration, dataset.label)
 
         if self._args.store_predictions and not self._args.no_overlapping:
-            evaluator.store_predictions()
+            evaluator.store_predictions(dataset_path)
 
         if self._args.store_examples:
             evaluator.store_examples()
 
-    def _predict(self, model: torch.nn.Module, dataset: Dataset, input_reader: BaseInputReader):
+    def _predict(self, dataset_path: str, model: torch.nn.Module, dataset: Dataset, input_reader: BaseInputReader):
         # create data loader
         dataset.switch_mode(Dataset.EVAL_MODE)
         data_loader = DataLoader(dataset, batch_size=self._args.eval_batch_size, shuffle=False, drop_last=False,
@@ -292,7 +292,7 @@ class SpERTTrainer(BaseTrainer):
                 pred_entities.extend(batch_pred_entities)
                 pred_relations.extend(batch_pred_relations)
 
-        prediction.store_predictions(dataset.documents, pred_entities, pred_relations, self._args.predictions_path)
+        prediction.store_predictions(dataset_path, dataset.documents, pred_entities, pred_relations, self._args.predictions_path)
 
     def _get_optimizer_params(self, model):
         param_optimizer = list(model.named_parameters())

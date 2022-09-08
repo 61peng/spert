@@ -32,7 +32,7 @@ The attached ADE model was trained on split "1" ("ade_split_1_train.json" / "ade
 ## Examples
 (1) Train CoNLL04 on train dataset, evaluate on dev dataset:
 ```
-python ./spert.py train --config configs/example_train.conf
+python ./spert.py train --config configs/public_train.conf
 ```
 
 (2) Evaluate the CoNLL04 model on test dataset:

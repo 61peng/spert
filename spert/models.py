@@ -1,9 +1,9 @@
 import torch
 from torch import nn as nn
-from transformers import BertConfig
-from transformers import BertModel
+from transformers import BertConfig, RobertaConfig
+from transformers import BertModel, RobertaModel
 from transformers import BertPreTrainedModel
-
+from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel
 from spert import sampling
 from spert import util
 
@@ -11,7 +11,7 @@ from spert import util
 def get_token(h: torch.tensor, x: torch.tensor, token: int):
     """ Get specific token embedding (e.g. [CLS]) """
     emb_size = h.shape[-1]  # 768
-
+    # view()相当于reshape，-1表示不确定
     token_h = h.view(-1, emb_size)  # Size([len(encoding), 768])
     flat = x.contiguous().view(-1)  # Size([len(encoding))
 
@@ -122,9 +122,7 @@ class SpERT(BertPreTrainedModel):
 
     def _classify_entities(self, encodings, h, entity_masks, size_embeddings):
         # max pool entity candidate spans
-        m = (entity_masks.unsqueeze(-1) == 0).float() * (-1e30)
-        if hasattr(torch.cuda, 'empty_cache'):
-            torch.cuda.empty_cache()
+        m = (entity_masks.unsqueeze(-1) == 0).float() * (-1e30)  # 标注为非实体的token无限小
         entity_spans_pool = m + h.unsqueeze(1).repeat(1, entity_masks.shape[1], 1, 1)  # 在第二维重复100次，Size([1, neg_entity_count+entity_count, len(encodings), 768])
         entity_spans_pool = entity_spans_pool.max(dim=2)[0]  # Size([1, neg_entity_count+entity_count, 768])
 

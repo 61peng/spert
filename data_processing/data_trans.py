@@ -42,7 +42,7 @@ def JSON_reader(file):
 
 
 if __name__ == "__main__":
-    path = 'data/datasets/data_public/'
+    path = 'data/datasets/data_public/origin_data'
     file_list = os.listdir(path)
     for f in file_list:
         file = os.path.join(path,f)
@@ -73,6 +73,8 @@ if __name__ == "__main__":
                 ent_dicts["type"] = ents[2]
                 ent_dicts["start"]  = span.start
                 ent_dicts["end"] = span.end
+                ent_dicts["spacy_span"] = ent_span
+                ent_dicts["brat_span"] = ent_span_orig
                 sample_dict["entities"].append(ent_dicts)
                 # else:
                     # print(ents[3])
