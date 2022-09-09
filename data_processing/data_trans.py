@@ -1,6 +1,7 @@
 import json
 import spacy
 from data_val import custom_tokenizer
+from transformers import BertTokenizer
 import os
 
 def JSON_reader(file):
@@ -43,11 +44,12 @@ def JSON_reader(file):
 
 if __name__ == "__main__":
     path = 'data/datasets/data_public/origin_data'
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
     file_list = os.listdir(path)
     for f in file_list:
         file = os.path.join(path,f)
         jsonTD = JSON_reader(file)
-        nlp = spacy.load('en_core_web_sm')
+        nlp = spacy.blank('en')
         nlp.tokenizer = custom_tokenizer(nlp)
         JSON_list = []
 
@@ -58,23 +60,23 @@ if __name__ == "__main__":
             docs = nlp.make_doc(text)
             sample_dict["tokens"] = []
             for token in docs:
-                # print(token.text)
-                sample_dict["tokens"].append(token.text)
+                if tokenizer.tokenize(token.text) == []:
+                    sample_dict["tokens"].append('[unused1]')
+                else:
+                    sample_dict["tokens"].append(token.text)
             
             # entities
             sample_dict["entities"] = []
             for i in range(len(annotations['entities'])):           
                 ents = annotations['entities'][i]
                 span = docs.char_span(ents[0],ents[1],alignment_mode = "expand")
-                ent_span = span.text
-                ent_span_orig = docs.text[ents[0]:ents[1]]
-                # if ent_span == ent_span_orig:
+
                 ent_dicts = {}
                 ent_dicts["type"] = ents[2]
                 ent_dicts["start"]  = span.start
                 ent_dicts["end"] = span.end
-                ent_dicts["spacy_span"] = ent_span
-                ent_dicts["brat_span"] = ent_span_orig
+                ent_dicts["spacy_span"] = sample_dict["tokens"][span.start: span.end]
+                ent_dicts["brat_span"] = ents[3]
                 sample_dict["entities"].append(ent_dicts)
                 # else:
                     # print(ents[3])
@@ -95,7 +97,7 @@ if __name__ == "__main__":
             JSON_list.append(sample_dict)
     
 
-        with open(os.path.join("data/datasets/public_v2",f),"w") as target_file:
+        with open(os.path.join("data/datasets/public_v3",f),"w") as target_file:
             json.dump(JSON_list,target_file)
             print(str(f) + "写入完成")
         
